@@ -1,6 +1,7 @@
 // app/api/proxy/download/route.js
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export async function POST(request) {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || 'http://localhost:8000';
     const url = `${API_URL}/api/download`;
     
     console.log(`Proxying POST request to: ${url}`);
@@ -90,4 +91,19 @@ export async function POST(request) {
             details: error.toString()
         }, { status: 500 });
     }
+}
+
+export async function GET(request) {
+  try {
+    // Use the API_URL in your fetch requests
+    const response = await fetch(`${API_URL}/download`, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    // ... rest of your code ...
+  } catch (error) {
+    // ... error handling ...
+  }
 } 

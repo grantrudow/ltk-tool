@@ -1,29 +1,28 @@
 // app/api/proxy/download/[...path]/route.js
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export async function GET(request, { params }) {
-    const pathParts = params.path || [];
-    const path = pathParts.join('/');
+    const path = params.path || [];
+    const pathString = path.join('/');
     
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || 'http://localhost:8000';
-    const url = `${API_URL}/api/download/${path}`;
-    
-    console.log(`Proxying GET request to: ${url}`);
-    console.log(`Path parts:`, pathParts);
-    console.log(`Joined path: ${path}`);
+    console.log(`Proxying GET request to: ${API_URL}/download/${pathString}`);
+    console.log(`Path parts:`, path);
+    console.log(`Joined path: ${pathString}`);
     console.log(`Environment API_URL: ${process.env.API_URL}`);
     console.log(`Environment NEXT_PUBLIC_API_URL: ${process.env.NEXT_PUBLIC_API_URL}`);
     
     // Check if this is a status request
-    const isStatusRequest = path.includes('status');
+    const isStatusRequest = pathString.includes('status');
     
     // Get the task ID (first part of the path)
-    const taskId = pathParts[0]; // The first part should be the task ID
+    const taskId = path[0]; // The first part should be the task ID
     
     try {
         // Add timeout to prevent hanging requests
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for large files
         
-        const response = await fetch(url, {
+        const response = await fetch(`${API_URL}/download/${pathString}`, {
             headers: {
                 'Accept': 'application/json, application/octet-stream, */*',
             },
@@ -118,7 +117,7 @@ export async function GET(request, { params }) {
             }
         } catch (jsonError) {
             // If response is not valid JSON, return a proper error
-            console.error(`Invalid JSON response from ${url}:`, jsonError);
+            console.error(`Invalid JSON response from ${API_URL}/download/${pathString}:`, jsonError);
             const text = await response.text();
             console.error(`Response text:`, text.substring(0, 200) + '...');
             return Response.json({ 
@@ -128,7 +127,7 @@ export async function GET(request, { params }) {
             }, { status: 500 });
         }
     } catch (error) {
-        console.error(`Error proxying request to ${url}:`, error);
+        console.error(`Error proxying request to ${API_URL}/download/${pathString}:`, error);
         return Response.json({ 
             error: 'Failed to proxy request: ' + error.message,
             details: error.toString()
