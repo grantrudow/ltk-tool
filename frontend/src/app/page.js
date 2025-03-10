@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+// Get the API URL from environment variables
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function Home() {
@@ -20,11 +21,6 @@ export default function Home() {
   const [downloadUrl, setDownloadUrl] = useState('');
   const [downloadStarted, setDownloadStarted] = useState(false);
   const router = useRouter();
-
-  // Get the API URL - update to match backend routes
-  const apiBaseUrl = useDirectApi 
-    ? '/api/direct/download'
-    : '/api/proxy/download';
 
   // Clean up polling on unmount
   useEffect(() => {
@@ -66,10 +62,10 @@ export default function Home() {
     try {
       setLoading(true);
       console.log('Starting download task...');
-      console.log(`Using API endpoint: ${apiBaseUrl}`);
+      console.log(`Using API URL: ${API_URL}`);
       
-      // Start the download task
-      const response = await fetch(`${API_URL}/download`, {
+      // Start the download task - use the correct API endpoint with /api prefix
+      const response = await fetch(`${API_URL}/api/download`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -117,13 +113,13 @@ export default function Home() {
     } catch (err) {
       console.error('Error starting download:', err);
       
-      // If using proxy failed, try direct API (but only once)
-      if (!useDirectApi && retryCount === 0) {
-        setError(`Failed with proxy API. Trying direct API... (${err.message})`);
-        setUseDirectApi(true);
+      // If using direct API failed, try with proxy (only once)
+      if (useDirectApi && retryCount === 0) {
+        setError(`Failed with direct API. Trying proxy... (${err.message})`);
+        setUseDirectApi(false);
         setRetryCount(prev => prev + 1);
         
-        // Try again with direct API after a short delay
+        // Try again with proxy after a short delay
         setTimeout(() => {
           handleSubmit();
         }, 1000);
@@ -139,7 +135,6 @@ export default function Home() {
 
   const startPolling = (id) => {
     console.log(`Starting polling for task ${id}`);
-    console.log(`Using API endpoint: ${apiBaseUrl}`);
     
     // Clear any existing polling interval
     if (pollingInterval) {
@@ -151,8 +146,10 @@ export default function Home() {
     
     const interval = setInterval(async () => {
       try {
-        const statusUrl = `${apiBaseUrl}/${id}/status`;
+        // Use the correct API endpoint for status checks
+        const statusUrl = `${API_URL}/api/download/${id}/status`;
         console.log(`Checking status at: ${statusUrl}`);
+        
         const response = await fetch(statusUrl);
         
         if (!response) {
@@ -182,8 +179,8 @@ export default function Home() {
           setPollingInterval(null);
           
           if (data.status === 'completed') {
-            // Instead of redirecting, set download as ready and store the URL
-            const downloadUrl = `${apiBaseUrl}/${id}`;
+            // Set download URL correctly using the API_URL
+            const downloadUrl = `${API_URL}/api/download/${id}`;
             console.log(`Download ready at: ${downloadUrl}`);
             setDownloadReady(true);
             setDownloadUrl(downloadUrl);
@@ -250,7 +247,7 @@ export default function Home() {
       }
       
       // Get filename from Content-Disposition header or use a default
-      let filename = 'download.zip';
+      let filename = 'downloaded_media.zip';
       const contentDisposition = response.headers.get('content-disposition');
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
