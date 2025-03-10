@@ -20,26 +20,16 @@ const nextConfig = {
         },
       ];
     },
-    // Add rewrites for API routes
-    async rewrites() {
-      const apiUrl = process.env.API_URL || 'http://localhost:8000';
-      return [
-        // Direct API routes
-        {
-          source: '/api/direct/download',
-          destination: `${apiUrl}/api/download`,
-        },
-        {
-          source: '/api/direct/download/:path*',
-          destination: `${apiUrl}/api/download/:path*`,
-        },
-        // Fallback for any other direct API routes
-        {
-          source: '/api/direct/:path*',
-          destination: `${apiUrl}/api/:path*`,
-        },
-      ];
-    },
+    // Remove any rewrites or redirects related to API proxying
+    // For example, if you had something like:
+    // async rewrites() {
+    //   return [
+    //     {
+    //       source: '/api/proxy/:path*',
+    //       destination: 'https://backend-url/:path*',
+    //     },
+    //   ];
+    // },
   };
   
   export default nextConfig;

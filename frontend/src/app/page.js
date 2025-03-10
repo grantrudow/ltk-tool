@@ -4,6 +4,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export default function Home() {
   const [url, setUrl] = useState('');
   const [count, setCount] = useState(10);
@@ -67,7 +69,7 @@ export default function Home() {
       console.log(`Using API endpoint: ${apiBaseUrl}`);
       
       // Start the download task
-      const response = await fetch(apiBaseUrl, {
+      const response = await fetch(`${API_URL}/download`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
