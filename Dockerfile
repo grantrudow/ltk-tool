@@ -51,5 +51,8 @@ ENV PYTHONUNBUFFERED=1 \
 RUN echo '#!/bin/bash\nXvfb :99 -screen 0 1280x1024x24 &\nuvicorn backend.main:app --host 0.0.0.0 --port 8000' > /usr/local/bin/start.sh \
     && chmod +x /usr/local/bin/start.sh
 
+# Add this to your Dockerfile before the CMD line
+ENV PYTHONPATH=/app
+
 # Command to run the application
 CMD ["/usr/local/bin/start.sh"]

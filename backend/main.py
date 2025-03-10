@@ -2,6 +2,7 @@
 import os
 import shutil
 import tempfile
+import sys
 from typing import List
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
@@ -15,12 +16,25 @@ import asyncio
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Fix the import path - add the current directory to the Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+backend_dir = os.path.dirname(current_dir)  # Go up one level if necessary
+if backend_dir not in sys.path:
+    sys.path.append(backend_dir)
+
 # Import your existing download script
 try:
-    from download_script.ltk_network_capture import capture_video_urls
-    from download_script.ltk_m3u8_downloader import download_m3u8_to_mp4
-    from download_script.download_video_from_url import download_video_from_url
-    logger.info("Successfully imported download scripts")
+    # Try both import paths to be safe
+    try:
+        from backend.download_script.ltk_network_capture import capture_video_urls
+        from backend.download_script.ltk_m3u8_downloader import download_m3u8_to_mp4
+        from backend.download_script.download_video_from_url import download_video_from_url
+        logger.info("Successfully imported download scripts using 'backend.' prefix")
+    except ImportError:
+        from download_script.ltk_network_capture import capture_video_urls
+        from download_script.ltk_m3u8_downloader import download_m3u8_to_mp4
+        from download_script.download_video_from_url import download_video_from_url
+        logger.info("Successfully imported download scripts without prefix")
 except ImportError as e:
     logger.error(f"Error importing download scripts: {e}")
     # Define placeholder functions if imports fail
@@ -38,6 +52,7 @@ except ImportError as e:
     def download_video_from_url(video_url, output_dir, max_items=10):
         logger.warning("Using placeholder download_video_from_url function")
         # Create a dummy file
+        os.makedirs(output_dir, exist_ok=True)
         dummy_file = os.path.join(output_dir, "dummy_video.mp4")
         with open(dummy_file, "w") as f:
             f.write(f"Dummy video file for {video_url}")
@@ -107,7 +122,7 @@ app = FastAPI(title="Media Downloader API")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Add your Next.js frontend URL
+    allow_origins=["http://localhost:3000", "*"],  # Add your frontend URL and allow all for testing
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -240,6 +255,11 @@ async def get_download(task_id: str):
         filename="downloaded_media.zip",
         background=background_tasks
     )
+
+# Add a simple root endpoint for health check
+@app.get("/")
+def read_root():
+    return {"status": "online", "message": "Media Downloader API is running"}
 
 if __name__ == "__main__":
     import uvicorn
