@@ -1,0 +1,19 @@
+services:
+  # Backend API service
+  - type: web
+    name: media-downloader-api
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    disk:
+      name: media-storage
+      mountPath: /app/download_storage
+      sizeGB: 10
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: PYTHONPATH
+        value: /app
+      - key: MAX_DOWNLOAD_SIZE_MB
+        value: 500
