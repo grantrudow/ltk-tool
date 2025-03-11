@@ -310,7 +310,7 @@ export default function Home() {
 
   const handleStartDownload = async () => {
     try {
-      console.log('Making request to:', `${API_URL}/api/download`); // Debug log
+      console.log('Making request to:', `${API_URL}/api/download`);
       
       const response = await fetch(`${API_URL}/api/download`, {
         method: 'POST',
@@ -326,12 +326,37 @@ export default function Home() {
         throw new Error(`API request failed: ${response.status}`);
       }
       
-      const data = await response.json();
-      // Handle successful response
+      // Check the content type of the response
+      const contentType = response.headers.get('content-type');
+      
+      // Handle different response types appropriately
+      if (contentType && contentType.includes('application/json')) {
+        // If it's JSON, parse it
+        const data = await response.json();
+        console.log('Response data:', data);
+        
+        // Process the JSON data
+        // ...
+      } else if (contentType && contentType.includes('application/octet-stream')) {
+        // If it's a file download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'download.zip'; // Or get filename from headers if available
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+      } else {
+        // For text or other content types
+        const text = await response.text();
+        console.log('Response text:', text);
+      }
       
     } catch (error) {
-      console.error('Download error:', error);
-      // Handle error - make sure you're not triggering another request here
+      console.error('Error starting download:', error);
+      // Handle error
     }
   };
 
@@ -417,53 +442,4 @@ export default function Home() {
                 disabled={loading || status === 'processing'}
                 className={`bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors ${
                   (loading || status === 'processing') ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
-              >
-                {loading ? 'Starting...' : status === 'processing' ? 'Processing...' : 'Start Download'}
-              </button>
-            </div>
-          </form>
-        )}
-        
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-6" role="alert">
-            <strong className="font-bold">Error: </strong>
-            <span className="block sm:inline">{error}</span>
-          </div>
-        )}
-        
-        {status && !downloadReady && (
-          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 className="text-xl font-bold mb-4">Download Status</h2>
-            <div className="mb-4">
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div 
-                  className={`h-2.5 rounded-full ${
-                    status === 'completed' ? 'bg-green-600' : 
-                    status === 'failed' ? 'bg-red-600' : 'bg-blue-600 animate-pulse'
-                  }`} 
-                  style={{ width: status === 'completed' ? '100%' : status === 'failed' ? '100%' : '60%' }}
-                ></div>
-              </div>
-            </div>
-            <p className="text-center font-medium">
-              {status === 'processing' && 'Processing your download request...'}
-              {status === 'completed' && 'Download completed successfully!'}
-              {status === 'failed' && 'Download failed. Please try again.'}
-            </p>
-            {status === 'processing' && (
-              <p className="text-center text-gray-500 text-sm mt-2">
-                This may take a few minutes depending on the content size.
-              </p>
-            )}
-          </div>
-        )}
-        
-        <div className="mt-8 text-center text-gray-500 text-sm">
-          <p>This tool allows you to download content from supported platforms.</p>
-          <p className="mt-2">For educational and personal use only.</p>
-        </div>
-      </div>
-    </main>
-  );
-}
+                }`
