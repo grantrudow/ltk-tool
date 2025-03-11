@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiRequest } from '@/utils/api';
 
 // Get the API URL from environment variables
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -65,11 +66,8 @@ export default function Home() {
       console.log(`Using API URL: ${API_URL}`);
       
       // Start the download task - use the correct API endpoint with /api prefix
-      const response = await fetch(`${API_URL}/api/download`, {
+      const response = await apiRequest('/download', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({ url, count }),
       });
 
