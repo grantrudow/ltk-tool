@@ -101,6 +101,7 @@ export default function Home() {
       setRetryCount(0);
       console.log('Download task started:', data);
       
+      // Check for task_id in the correct format from the API response
       if (!data.task_id) {
         throw new Error('No task ID returned from server');
       }
@@ -438,7 +439,7 @@ export default function Home() {
             
             <div className="flex justify-center">
               <button
-                onClick={handleStartDownload}
+                type="submit"
                 disabled={loading || status === 'processing'}
                 className={`bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors ${
                   (loading || status === 'processing') ? 'opacity-50 cursor-not-allowed' : ''
