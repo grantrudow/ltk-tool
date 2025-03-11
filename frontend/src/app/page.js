@@ -6,7 +6,9 @@ import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/utils/api';
 
 // Get the API URL from environment variables
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL 
+  ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '') // Remove trailing slash if present
+  : 'http://localhost:8000';
 
 export default function Home() {
   const [url, setUrl] = useState('');
@@ -304,6 +306,33 @@ export default function Home() {
     setDownloadUrl('');
     setDownloadStarted(false);
     setError('');
+  };
+
+  const handleStartDownload = async () => {
+    try {
+      console.log('Making request to:', `${API_URL}/api/download`); // Debug log
+      
+      const response = await fetch(`${API_URL}/api/download`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          // Your request data
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      // Handle successful response
+      
+    } catch (error) {
+      console.error('Download error:', error);
+      // Handle error - make sure you're not triggering another request here
+    }
   };
 
   return (
