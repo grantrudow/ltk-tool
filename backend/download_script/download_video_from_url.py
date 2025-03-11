@@ -5,11 +5,19 @@ import re
 import base64
 import subprocess
 import sys
+import tempfile
+import shutil
+import logging
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Import the other modules
 try:
@@ -35,16 +43,47 @@ def download_video_from_url(video_url, output_dir="downloaded_videos", max_items
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
+    # Create a unique temporary directory for Chrome user data
+    temp_dir = tempfile.mkdtemp(prefix="chrome_user_data_")
+    logger.info(f"Created temporary user data directory: {temp_dir}")
+    
+    # Make sure the directory has the right permissions
+    os.chmod(temp_dir, 0o755)
+    
     # Setup Chrome
     chrome_options = Options()
     # Uncomment to run in background
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument(f"--remote-debugging-port={9222 + os.getpid() % 1000}")  # Use a dynamic port
+    chrome_options.add_argument(f"--user-data-dir={temp_dir}")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-plugins")
+    chrome_options.add_argument("--incognito")
     
-    driver = webdriver.Chrome(options=chrome_options)
+    driver = None
     
     try:
+        # Check if chromedriver is in PATH
+        chrome_path = os.environ.get('CHROME_PATH', None)
+        chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', None)
+        
+        if chrome_path:
+            logger.info(f"Using Chrome binary from: {chrome_path}")
+            chrome_options.binary_location = chrome_path
+        
+        if chromedriver_path:
+            logger.info(f"Using ChromeDriver from: {chromedriver_path}")
+            service = Service(executable_path=chromedriver_path)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            logger.info("Chrome driver initialized with explicit service path")
+        else:
+            driver = webdriver.Chrome(options=chrome_options)
+            logger.info("Chrome driver initialized successfully")
+        
         # Navigate to the video page
         print(f"Opening URL: {video_url}")
         driver.get(video_url)
@@ -116,8 +155,24 @@ def download_video_from_url(video_url, output_dir="downloaded_videos", max_items
         
     except Exception as e:
         print(f"Error: {e}")
+        logger.error(f"Error in download_video_from_url: {str(e)}")
     finally:
-        driver.quit()
+        # Clean up the driver
+        if driver:
+            try:
+                driver.quit()
+                logger.info("Chrome driver closed successfully")
+            except Exception as e:
+                print(f"Error closing driver: {e}")
+                logger.error(f"Error closing driver: {str(e)}")
+        
+        # Clean up the temporary user data directory
+        if 'temp_dir' in locals() and temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.info(f"Removed temporary user data directory: {temp_dir}")
+            except Exception as e:
+                logger.error(f"Error removing temporary directory {temp_dir}: {str(e)}")
 
 def process_video_post(driver, post_element, output_dir, referer_url, index):
     """Process and download video content from a post"""

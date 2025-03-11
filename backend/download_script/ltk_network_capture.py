@@ -3,12 +3,20 @@ import time
 import re
 import os
 import signal
+import logging
+import tempfile
+import uuid
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Set a timeout for the entire function
 class TimeoutError(Exception):
@@ -34,8 +42,16 @@ def capture_video_urls(video_page_url, timeout=30, skip=0):
     signal.alarm(timeout)
     
     driver = None
+    temp_dir = None
     
     try:
+        # Create a unique temporary directory for Chrome user data
+        temp_dir = tempfile.mkdtemp(prefix="chrome_user_data_")
+        logger.info(f"Created temporary user data directory: {temp_dir}")
+        
+        # Make sure the directory has the right permissions
+        os.chmod(temp_dir, 0o755)
+        
         # Configure Chrome with network logging enabled
         chrome_options = Options()
         chrome_options.add_argument("--headless")  # Run headless for reliability
@@ -43,36 +59,82 @@ def capture_video_urls(video_page_url, timeout=30, skip=0):
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--autoplay-policy=no-user-gesture-required")  # Allow autoplay
         
+        # Add these arguments to fix the "DevToolsActivePort file doesn't exist" error
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument(f"--remote-debugging-port={9222 + os.getpid() % 1000}")  # Use a dynamic port
+        
+        # Add a unique user data directory
+        chrome_options.add_argument(f"--user-data-dir={temp_dir}")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins")
+        chrome_options.add_argument("--incognito")
+        
         # Set log preferences for network monitoring
         chrome_options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
         
-        driver = webdriver.Chrome(options=chrome_options)
+        logger.info(f"Starting Chrome with options: {chrome_options.arguments}")
+        
+        try:
+            # Check if chromedriver is in PATH
+            chrome_path = os.environ.get('CHROME_PATH', None)
+            chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', None)
+            
+            if chrome_path:
+                logger.info(f"Using Chrome binary from: {chrome_path}")
+                chrome_options.binary_location = chrome_path
+            
+            if chromedriver_path:
+                logger.info(f"Using ChromeDriver from: {chromedriver_path}")
+                service = Service(executable_path=chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+                logger.info("Chrome driver initialized with explicit service path")
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
+                logger.info("Chrome driver initialized successfully")
+        except WebDriverException as e:
+            logger.error(f"Failed to initialize Chrome driver: {str(e)}")
+            # Try with service object explicitly
+            try:
+                service = Service()
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+                logger.info("Chrome driver initialized with explicit service")
+            except Exception as e2:
+                logger.error(f"Second attempt to initialize Chrome driver failed: {str(e2)}")
+                raise
         
         # Navigate to the video page
         print(f"Network capture: Opening URL: {video_page_url}")
+        logger.info(f"Navigating to URL: {video_page_url}")
         driver.get(video_page_url)
         
         # Wait for video element to load with a shorter timeout
         print("Network capture: Waiting for video element...")
+        logger.info("Waiting for video element...")
         try:
             WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.TAG_NAME, "video"))
             )
             print("Network capture: Video element found")
+            logger.info("Video element found")
         except TimeoutException:
             print("Network capture: Video element not found, continuing anyway")
+            logger.warning("Video element not found, continuing anyway")
         
         # Try to play the video
         video_elements = driver.find_elements(By.TAG_NAME, "video")
         if video_elements:
             print(f"Network capture: Found {len(video_elements)} video elements. Trying to play...")
+            logger.info(f"Found {len(video_elements)} video elements. Trying to play...")
             for video in video_elements:
                 try:
                     driver.execute_script("arguments[0].play();", video)
                     # Skip forward a bit to trigger video loading
                     driver.execute_script("arguments[0].currentTime = 2;", video)
-                except:
+                    logger.info("Successfully played video")
+                except Exception as e:
                     print("Network capture: Error playing video, continuing...")
+                    logger.warning(f"Error playing video: {str(e)}, continuing...")
         
         # Also try clicking play buttons if videos didn't autoplay
         try:
@@ -267,33 +329,91 @@ def capture_video_urls(video_page_url, timeout=30, skip=0):
             return []
         
     except TimeoutError:
-        print("Network capture: Process timed out, returning any URLs found so far")
-        if 'mux_urls' in locals() and mux_urls:
-            return mux_urls[skip:] if skip < len(mux_urls) else []
-        elif 'm3u8_urls' in locals() and m3u8_urls:
-            return m3u8_urls[skip:] if skip < len(m3u8_urls) else []
+        print(f"Network capture: Timed out after {timeout} seconds")
+        logger.error(f"Timed out after {timeout} seconds")
+        # Return any URLs we might have found before timeout
+        if driver:
+            try:
+                return extract_m3u8_urls_from_logs(driver, skip)
+            except Exception as e:
+                print(f"Network capture: Error extracting URLs after timeout: {e}")
+                logger.error(f"Error extracting URLs after timeout: {str(e)}")
+                return []
         return []
     except Exception as e:
-        print(f"Network capture error: {e}")
+        print(f"Network capture: Error during network capture: {e}")
+        logger.error(f"Error during network capture: {str(e)}")
         return []
     finally:
-        # Cancel the alarm
-        signal.alarm(0)
-        
-        # Close the browser
+        # Clean up
+        signal.alarm(0)  # Cancel the alarm
         if driver:
             try:
                 driver.quit()
-                print("Network capture: Browser closed")
-            except:
-                print("Network capture: Error closing browser")
-                # Force close if needed
-                try:
-                    if hasattr(driver, 'service') and hasattr(driver.service, 'process'):
-                        if driver.service.process:
-                            driver.service.process.kill()
-                except:
-                    pass
+                logger.info("Chrome driver closed successfully")
+            except Exception as e:
+                print(f"Network capture: Error closing driver: {e}")
+                logger.error(f"Error closing driver: {str(e)}")
+        
+        # Clean up the temporary user data directory
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.info(f"Removed temporary user data directory: {temp_dir}")
+            except Exception as e:
+                logger.error(f"Error removing temporary directory {temp_dir}: {str(e)}")
+
+def extract_m3u8_urls_from_logs(driver, skip=0):
+    """
+    Extract M3U8 URLs from browser logs
+    
+    Args:
+        driver: Selenium WebDriver instance
+        skip: Number of URLs to skip
+        
+    Returns:
+        list: A list of found M3U8 URLs
+    """
+    try:
+        # Get browser logs
+        logs = driver.get_log('performance')
+        
+        # Find M3U8 URLs in network requests
+        m3u8_urls = []
+        mux_urls = []
+        
+        # Process network logs to find M3U8 URLs
+        for entry in logs:
+            try:
+                log_data = json.loads(entry["message"])["message"]
+                
+                # Check if this is a network request
+                if "Network.requestWillBeSent" in log_data["method"]:
+                    request_data = log_data["params"]
+                    url = request_data.get("request", {}).get("url", "")
+                    
+                    # Look for M3U8 URLs
+                    if url and '.m3u8' in url:
+                        m3u8_urls.append(url)
+                        
+                        # Specifically check for Mux URLs
+                        if 'stream.mux.com' in url:
+                            mux_urls.append(url)
+            except Exception as e:
+                logger.warning(f"Error processing log entry: {str(e)}")
+                continue
+        
+        # If we found Mux URLs, prioritize those
+        if mux_urls:
+            return mux_urls[skip:] if skip < len(mux_urls) else []
+        elif m3u8_urls:
+            return m3u8_urls[skip:] if skip < len(m3u8_urls) else []
+        else:
+            return []
+    except Exception as e:
+        logger.error(f"Error extracting M3U8 URLs from logs: {str(e)}")
+        return []
 
 # This allows the module to be run standalone for testing
 if __name__ == "__main__":
