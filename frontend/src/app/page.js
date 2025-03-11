@@ -438,8 +438,18 @@ export default function Home() {
             
             <div className="flex justify-center">
               <button
-                type="submit"
+                onClick={handleStartDownload}
                 disabled={loading || status === 'processing'}
                 className={`bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors ${
                   (loading || status === 'processing') ? 'opacity-50 cursor-not-allowed' : ''
-                }`
+                }`}
+              >
+                {loading ? 'Processing...' : 'Start Download'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </main>
+  );
+}

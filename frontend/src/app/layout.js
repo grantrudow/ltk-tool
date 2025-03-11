@@ -13,8 +13,8 @@ import "./globals.css";
 // });
 
 const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
+  subsets: ['latin'],
+  display: 'swap',
 });
 
 const robotoMono = Roboto_Mono({
@@ -29,12 +29,8 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body
-        className={`${inter.variable} ${robotoMono.variable} antialiased`}
-      >
-        {children}
-      </body>
+    <html lang="en" className={inter.className}>
+      <body>{children}</body>
     </html>
   );
 }
