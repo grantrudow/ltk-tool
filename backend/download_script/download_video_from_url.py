@@ -29,7 +29,7 @@ except ImportError:
     print("Warning: ltk_network_capture.py or ltk_m3u8_downloader.py not found in the current directory.")
     print("Video downloading will be limited to direct downloads only.")
 
-def download_video_from_url(video_url, output_dir="downloaded_videos", max_items=10):
+def download_video_from_url(video_url, output_dir="downloaded_videos", max_items=10, is_direct_post=False):
     """
     Script to download a video from a page containing a video tag,
     including support for blob URLs
@@ -38,6 +38,7 @@ def download_video_from_url(video_url, output_dir="downloaded_videos", max_items
         video_url (str): URL to a page containing a video
         output_dir (str): Directory to save videos
         max_items (int): Maximum number of items to download (default: 10)
+        is_direct_post (bool): Whether the URL is a direct post URL (default: False)
     """
     # Create output directory
     if not os.path.exists(output_dir):
@@ -63,116 +64,147 @@ def download_video_from_url(video_url, output_dir="downloaded_videos", max_items
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-plugins")
     chrome_options.add_argument("--incognito")
+    # Add additional stability options
+    chrome_options.add_argument("--disable-web-security")
+    chrome_options.add_argument("--disable-features=IsolateOrigins,site-per-process")
+    chrome_options.add_argument("--disable-site-isolation-trials")
+    chrome_options.add_argument("--disable-application-cache")
     
-    driver = None
+    # Track successful downloads
+    successful_downloads = 0
+    max_retries = 3
+    retry_count = 0
     
-    try:
-        # Check if chromedriver is in PATH
-        chrome_path = os.environ.get('CHROME_PATH', None)
-        chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', None)
+    while successful_downloads < max_items and retry_count < max_retries:
+        driver = None
         
-        if chrome_path:
-            logger.info(f"Using Chrome binary from: {chrome_path}")
-            chrome_options.binary_location = chrome_path
-        
-        if chromedriver_path:
-            logger.info(f"Using ChromeDriver from: {chromedriver_path}")
-            service = Service(executable_path=chromedriver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            logger.info("Chrome driver initialized with explicit service path")
-        else:
-            driver = webdriver.Chrome(options=chrome_options)
-            logger.info("Chrome driver initialized successfully")
-        
-        # Navigate to the video page
-        print(f"Opening URL: {video_url}")
-        driver.get(video_url)
-        
-        # Wait for page to load
-        time.sleep(5)
-        
-        # Process each post/item on the page
-        post_items = driver.find_elements(By.CSS_SELECTOR, "[data-test-id='post-feed-item/card']")
-        print(f"Found {len(post_items)} post items on the page")
-        
-        # Skip the first 2 items as requested
-        if len(post_items) > 2:
-            print("Skipping the first 2 media items as requested")
-            post_items = post_items[2:]
-            print(f"Processing {len(post_items)} remaining items")
-        else:
-            print("Warning: Less than 3 items found, processing all available items")
-        
-        # Limit the number of items to process based on max_items
-        if len(post_items) > max_items:
-            print(f"Limiting to {max_items} items as requested")
-            post_items = post_items[:max_items]
-            print(f"Processing {len(post_items)} items")
-        
-        image_count = 0
-        video_count = 0
-        
-        for i, post in enumerate(post_items):
-            try:
-                print(f"\n{'='*50}")
-                print(f"DEBUGGING POST #{i+3}")  # +3 because we skipped 2
-                print(f"{'='*50}")
+        try:
+            # Check if chromedriver is in PATH
+            chrome_path = os.environ.get('CHROME_PATH', None)
+            chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', None)
+            
+            if chrome_path:
+                logger.info(f"Using Chrome binary from: {chrome_path}")
+                chrome_options.binary_location = chrome_path
+            
+            if chromedriver_path:
+                logger.info(f"Using ChromeDriver from: {chromedriver_path}")
+                service = Service(executable_path=chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+                logger.info("Chrome driver initialized with explicit service path")
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
+                logger.info("Chrome driver initialized successfully")
+            
+            # Navigate to the video page
+            print(f"Opening URL: {video_url}")
+            driver.get(video_url)
+            
+            # Wait for page to load
+            time.sleep(5)
+            
+            # If this is a direct post URL, handle it differently
+            if is_direct_post:
+                print("Processing as direct post URL")
+                process_direct_post(driver, output_dir, video_url)
+                successful_downloads += 1
+                break  # Exit the retry loop after processing the direct post
+            
+            # Process each post/item on the page
+            post_items = driver.find_elements(By.CSS_SELECTOR, "[data-test-id='post-feed-item/card']")
+            print(f"Found {len(post_items)} post items on the page")
+            
+            # Skip the first 2 items as requested
+            if len(post_items) > 2:
+                print("Skipping the first 2 media items as requested")
+                post_items = post_items[2:]
+                print(f"Processing {len(post_items)} remaining items")
+            else:
+                print("Warning: Less than 3 items found, processing all available items")
+            
+            # Limit the number of items to process based on max_items
+            remaining_items = max_items - successful_downloads
+            if len(post_items) > remaining_items:
+                print(f"Limiting to {remaining_items} items as requested")
+                post_items = post_items[:remaining_items]
+                print(f"Processing {len(post_items)} items")
+            
+            image_count = 0
+            video_count = 0
+            
+            for i, post in enumerate(post_items):
+                try:
+                    print(f"\n{'='*50}")
+                    print(f"DEBUGGING POST #{i+3}")  # +3 because we skipped 2
+                    print(f"{'='*50}")
+                    
+                    # Debug: Print the HTML structure of the post
+                    post_html = post.get_attribute('outerHTML')
+                    print(f"Post HTML snippet (first 200 chars): {post_html[:200]}...")
+                    
+                    # Debug: Check for all buttons in the post
+                    all_buttons = post.find_elements(By.TAG_NAME, "button")
+                    print(f"Found {len(all_buttons)} buttons in post")
+                    for j, btn in enumerate(all_buttons):
+                        btn_class = btn.get_attribute("class")
+                        print(f"  Button #{j+1} class: {btn_class}")
+                    
+                    # Debug: Check for elements with 'play' in their class or id
+                    play_elements = post.find_elements(By.CSS_SELECTOR, "[class*='play'], [id*='play']")
+                    print(f"Found {len(play_elements)} elements with 'play' in class/id")
+                    for j, elem in enumerate(play_elements):
+                        elem_tag = elem.tag_name
+                        elem_class = elem.get_attribute("class")
+                        print(f"  Play element #{j+1}: Tag={elem_tag}, Class={elem_class}")
+                    
+                    # More specific check for play buttons
+                    play_button = post.find_elements(By.CSS_SELECTOR, "button.play-icon, button.v-btn--fab i.capsule-consumer-play-outline-16")
+                    
+                    if play_button:
+                        print(f"Post #{i+3}: Found specific play button. Processing as video.")
+                        video_count += 1
+                        process_video_post(driver, post, output_dir, video_url, i)
+                        successful_downloads += 1
+                    else:
+                        print(f"Post #{i+3}: No play button found. Processing as image.")
+                        image_count += 1
+                        process_image_post(driver, post, output_dir, video_url, i)
+                        successful_downloads += 1
+                except Exception as e:
+                    print(f"Error processing post #{i+3}: {e}")
+                    # Continue with the next post instead of breaking the entire loop
+                    continue
+            
+            print(f"Processing complete. Found {image_count} images and {video_count} videos.")
+            print(f"Successfully downloaded {successful_downloads} items out of requested {max_items}.")
+            
+            # If we've downloaded enough items, break out of the retry loop
+            if successful_downloads >= max_items:
+                break
                 
-                # Debug: Print the HTML structure of the post
-                post_html = post.get_attribute('outerHTML')
-                print(f"Post HTML snippet (first 200 chars): {post_html[:200]}...")
-                
-                # Debug: Check for all buttons in the post
-                all_buttons = post.find_elements(By.TAG_NAME, "button")
-                print(f"Found {len(all_buttons)} buttons in post")
-                for j, btn in enumerate(all_buttons):
-                    btn_class = btn.get_attribute("class")
-                    print(f"  Button #{j+1} class: {btn_class}")
-                
-                # Debug: Check for elements with 'play' in their class or id
-                play_elements = post.find_elements(By.CSS_SELECTOR, "[class*='play'], [id*='play']")
-                print(f"Found {len(play_elements)} elements with 'play' in class/id")
-                for j, elem in enumerate(play_elements):
-                    elem_tag = elem.tag_name
-                    elem_class = elem.get_attribute("class")
-                    print(f"  Play element #{j+1}: Tag={elem_tag}, Class={elem_class}")
-                
-                # More specific check for play buttons
-                play_button = post.find_elements(By.CSS_SELECTOR, "button.play-icon, button.v-btn--fab i.capsule-consumer-play-outline-16")
-                
-                if play_button:
-                    print(f"Post #{i+3}: Found specific play button. Processing as video.")
-                    video_count += 1
-                    process_video_post(driver, post, output_dir, video_url, i)
-                else:
-                    print(f"Post #{i+3}: No play button found. Processing as image.")
-                    image_count += 1
-                    process_image_post(driver, post, output_dir, video_url, i)
-            except Exception as e:
-                print(f"Error processing post #{i+3}: {e}")
-        
-        print(f"Processing complete. Found {image_count} images and {video_count} videos.")
-        
-    except Exception as e:
-        print(f"Error: {e}")
-        logger.error(f"Error in download_video_from_url: {str(e)}")
-    finally:
-        # Clean up the driver
-        if driver:
-            try:
-                driver.quit()
-                logger.info("Chrome driver closed successfully")
-            except Exception as e:
-                print(f"Error closing driver: {e}")
-                logger.error(f"Error closing driver: {str(e)}")
-        
-        # Clean up the temporary user data directory
-        if 'temp_dir' in locals() and temp_dir and os.path.exists(temp_dir):
-            try:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                logger.info(f"Removed temporary user data directory: {temp_dir}")
-            except Exception as e:
-                logger.error(f"Error removing temporary directory {temp_dir}: {str(e)}")
+        except Exception as e:
+            print(f"Error: {e}")
+            logger.error(f"Error in download_video_from_url: {str(e)}")
+            retry_count += 1
+            print(f"Retrying... (Attempt {retry_count} of {max_retries})")
+            time.sleep(2)  # Wait before retrying
+        finally:
+            # Clean up the driver
+            if driver:
+                try:
+                    driver.quit()
+                    logger.info("Chrome driver closed successfully")
+                except Exception as e:
+                    print(f"Error closing driver: {e}")
+                    logger.error(f"Error closing driver: {str(e)}")
+    
+    # Clean up the temporary user data directory
+    if 'temp_dir' in locals() and temp_dir and os.path.exists(temp_dir):
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.info(f"Removed temporary user data directory: {temp_dir}")
+        except Exception as e:
+            logger.error(f"Error removing temporary directory {temp_dir}: {str(e)}")
 
 def process_video_post(driver, post_element, output_dir, referer_url, index):
     """Process and download video content from a post"""
@@ -470,6 +502,124 @@ def download_file(url, filename, referer):
     except Exception as e:
         print(f"Error downloading file: {e}")
         return False
+
+def process_direct_post(driver, output_dir, post_url):
+    """
+    Process a direct post URL and download either image or video content
+    
+    Args:
+        driver: Selenium WebDriver instance
+        output_dir: Directory to save downloaded media
+        post_url: URL of the post
+    """
+    print(f"Processing direct post URL: {post_url}")
+    
+    try:
+        # First check for video elements
+        video_elements = driver.find_elements(By.TAG_NAME, "video")
+        
+        if video_elements:
+            print(f"Found {len(video_elements)} video elements on post page")
+            
+            # Try to use ltk_network_capture first if available
+            if MODULES_IMPORTED:
+                try:
+                    print("Using ltk_network_capture to get M3U8 URL...")
+                    m3u8_urls = ltk_network_capture.capture_video_urls(post_url)
+                    
+                    if m3u8_urls:
+                        print(f"Found {len(m3u8_urls)} M3U8 URLs")
+                        for i, m3u8_url in enumerate(m3u8_urls):
+                            print(f"Processing M3U8 URL #{i+1}: {m3u8_url}")
+                            output_file = os.path.join(output_dir, f"video_direct_{i}.mp4")
+                            
+                            # Use ltk_m3u8_downloader to download the video
+                            print(f"Downloading video using ltk_m3u8_downloader...")
+                            ltk_m3u8_downloader.download_m3u8_to_mp4(m3u8_url, output_file)
+                            print(f"Video saved to {output_file}")
+                        
+                        return
+                except Exception as e:
+                    print(f"Error using ltk_network_capture: {e}")
+                    print("Falling back to direct download methods.")
+            
+            # If network capture failed or isn't available, try direct download
+            for i, video in enumerate(video_elements):
+                try:
+                    video_src = video.get_attribute("src")
+                    if video_src and video_src.startswith("blob:"):
+                        print(f"Found blob URL: {video_src}")
+                        # For blob URLs, we need to use JavaScript to download
+                        output_file = os.path.join(output_dir, f"video_direct_{i}.mp4")
+                        download_blob_video(driver, video, output_file)
+                    elif video_src:
+                        print(f"Found direct video URL: {video_src}")
+                        output_file = os.path.join(output_dir, f"video_direct_{i}.mp4")
+                        download_file(video_src, output_file, post_url)
+                except Exception as e:
+                    print(f"Error downloading video #{i}: {e}")
+            
+            return
+        
+        # If no videos found, look for images
+        # First try to find images with the specific class from the example
+        image_elements = driver.find_elements(By.CSS_SELECTOR, "img.c-image, img[data-v-d05415aa]")
+        
+        if not image_elements:
+            # Fallback to any images in the post
+            image_elements = driver.find_elements(By.TAG_NAME, "img")
+        
+        if image_elements:
+            print(f"Found {len(image_elements)} image elements in post")
+            
+            for i, img in enumerate(image_elements):
+                try:
+                    # Try to get the highest resolution image from srcset if available
+                    srcset = img.get_attribute("srcset")
+                    if srcset:
+                        # Parse srcset to get the highest resolution image
+                        srcset_parts = srcset.split(',')
+                        highest_res_url = None
+                        highest_dpr = 0
+                        
+                        for part in srcset_parts:
+                            part = part.strip()
+                            if part:
+                                url_dpr = part.split(' ')
+                                if len(url_dpr) >= 2:
+                                    url = url_dpr[0]
+                                    dpr_str = url_dpr[-1]
+                                    try:
+                                        # Extract the DPR value (e.g., "2x" -> 2)
+                                        dpr = float(dpr_str.replace('x', ''))
+                                        if dpr > highest_dpr:
+                                            highest_dpr = dpr
+                                            highest_res_url = url
+                                    except ValueError:
+                                        continue
+                        
+                        if highest_res_url:
+                            print(f"Found highest resolution image in srcset: {highest_res_url}")
+                            filename = os.path.join(output_dir, f"image_direct_{i}.jpg")
+                            download_file(highest_res_url, filename, post_url)
+                            continue
+                    
+                    # If no srcset or couldn't parse it, use src attribute
+                    img_src = img.get_attribute("src")
+                    if img_src:
+                        print(f"Found image src: {img_src}")
+                        filename = os.path.join(output_dir, f"image_direct_{i}.jpg")
+                        download_file(img_src, filename, post_url)
+                except Exception as e:
+                    print(f"Error downloading image #{i}: {e}")
+            
+            return
+        
+        print("No media elements found on the post page")
+    
+    except Exception as e:
+        print(f"Error processing direct post: {e}")
+        raise
 
 if __name__ == "__main__":
     print("LTK Content Downloader - Images and Videos")

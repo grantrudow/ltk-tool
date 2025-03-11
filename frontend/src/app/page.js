@@ -23,6 +23,8 @@ export default function Home() {
   const [downloadReady, setDownloadReady] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState('');
   const [downloadStarted, setDownloadStarted] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [urlType, setUrlType] = useState('profile'); // 'profile' or 'post'
   const router = useRouter();
 
   // Clean up polling on unmount
@@ -33,6 +35,36 @@ export default function Home() {
       }
     };
   }, [pollingInterval]);
+
+  // Simulate progress while waiting for API response
+  useEffect(() => {
+    let progressInterval;
+    
+    if (loading && !downloadReady) {
+      // Reset progress when starting
+      setLoadingProgress(0);
+      
+      // Simulate progress up to 90% while waiting for the API
+      progressInterval = setInterval(() => {
+        setLoadingProgress(prev => {
+          // Slowly increase progress, but never reach 100% until complete
+          if (prev < 90) {
+            return prev + (Math.random() * 5);
+          }
+          return prev;
+        });
+      }, 500);
+    } else if (downloadReady) {
+      // Set to 100% when download is ready
+      setLoadingProgress(100);
+    }
+    
+    return () => {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+    };
+  }, [loading, downloadReady]);
 
   const isValidUrl = (string) => {
     try {
@@ -70,7 +102,11 @@ export default function Home() {
       // Start the download task - use the correct API endpoint with /api prefix
       const response = await apiRequest('/download', {
         method: 'POST',
-        body: JSON.stringify({ url, count }),
+        body: JSON.stringify({ 
+          url, 
+          count: urlType === 'profile' ? count : 1,
+          urlType
+        }),
       });
 
       // Check if we got a response
@@ -399,35 +435,69 @@ export default function Home() {
         ) : (
           <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-md mb-8">
             <div className="mb-4">
+              <div className="flex flex-col space-y-2 mb-4">
+                <div className="text-gray-700 font-bold mb-2">Select URL Type:</div>
+                <div className="flex items-center space-x-4">
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      value="profile"
+                      checked={urlType === 'profile'}
+                      onChange={() => setUrlType('profile')}
+                      className="form-radio h-4 w-4 text-blue-600"
+                      disabled={loading || status === 'processing'}
+                    />
+                    <span className="ml-2">Profile URL (Bulk Download)</span>
+                  </label>
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      value="post"
+                      checked={urlType === 'post'}
+                      onChange={() => setUrlType('post')}
+                      className="form-radio h-4 w-4 text-blue-600"
+                      disabled={loading || status === 'processing'}
+                    />
+                    <span className="ml-2">Direct Post URL</span>
+                  </label>
+                </div>
+              </div>
+              
               <label htmlFor="url" className="block text-gray-700 font-bold mb-2">
-                Enter URL to download content from:
+                {urlType === 'profile' 
+                  ? 'Enter profile URL to download content from:' 
+                  : 'Enter direct post URL to download:'}
               </label>
               <input
                 type="text"
                 id="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://www.shopltk.com/explore/username"
+                placeholder={urlType === 'profile' 
+                  ? "https://www.shopltk.com/explore/username" 
+                  : "https://www.shopltk.com/post/12345"}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={loading || status === 'processing'}
               />
             </div>
             
-            <div className="mb-6">
-              <label htmlFor="count" className="block text-gray-700 font-bold mb-2">
-                Number of items to download (max):
-              </label>
-              <input
-                type="number"
-                id="count"
-                value={count}
-                onChange={(e) => setCount(Math.max(1, parseInt(e.target.value) || 1))}
-                min="1"
-                max="100"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={loading || status === 'processing'}
-              />
-            </div>
+            {urlType === 'profile' && (
+              <div className="mb-6">
+                <label htmlFor="count" className="block text-gray-700 font-bold mb-2">
+                  Number of items to download (max):
+                </label>
+                <input
+                  type="number"
+                  id="count"
+                  value={count}
+                  onChange={(e) => setCount(Math.max(1, parseInt(e.target.value) || 1))}
+                  min="1"
+                  max="100"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={loading || status === 'processing'}
+                />
+              </div>
+            )}
             
             <div className="flex items-center mb-6">
               <input
@@ -443,6 +513,20 @@ export default function Home() {
               </label>
             </div>
             
+            {loading && (
+              <div className="mb-6">
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out"
+                    style={{ width: `${Math.min(Math.round(loadingProgress), 100)}%` }}
+                  ></div>
+                </div>
+                <p className="text-center text-sm text-gray-600 mt-2">
+                  {loadingProgress < 100 ? 'Processing your request...' : 'Download ready!'}
+                </p>
+              </div>
+            )}
+            
             <div className="flex justify-center">
               <button
                 type="submit"
@@ -455,6 +539,13 @@ export default function Home() {
               </button>
             </div>
           </form>
+        )}
+        
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
+            <strong className="font-bold">Error: </strong>
+            <span className="block sm:inline">{error}</span>
+          </div>
         )}
       </div>
     </main>
