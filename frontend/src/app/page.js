@@ -79,7 +79,13 @@ export default function Home() {
       }
 
       console.log(`Response status: ${response.status}`);
-      console.log(`Response headers:`, Object.fromEntries([...response.headers.entries()]));
+      
+      // Check if response.headers exists and has entries method before using it
+      if (response.headers && typeof response.headers.entries === 'function') {
+        console.log(`Response headers:`, Object.fromEntries([...response.headers.entries()]));
+      } else {
+        console.log('Response headers not available');
+      }
 
       // Try to parse the response as JSON
       let data;

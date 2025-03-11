@@ -15,9 +15,6 @@ export const apiRequest = async (endpoint, options = {}) => {
     ...options,
   });
   
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
-  }
-  
-  return response.json();
+  // Return the raw response instead of automatically parsing JSON
+  return response;
 }; 
